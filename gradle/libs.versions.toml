@@ -7,7 +7,7 @@ kotlin-gradlePlugin = "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20"
 spotless-gradlePlugin = "com.diffplug.spotless:spotless-plugin-gradle:6.22.0"
 ktlint = "com.pinterest.ktlint:ktlint-cli:1.0.1"
 
-kotlinx-serialization-json-okio = "org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.6.0"
+kotlinx-serialization-json-okio = "org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.6.2"
 
 okhttp-client = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
