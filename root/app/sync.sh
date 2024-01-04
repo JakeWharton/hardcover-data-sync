@@ -13,9 +13,6 @@ set -e
 	$HARDCOVER_DATA_SYNC_ARGS \
 	/data
 
-# Print something since the script otherwise has no output if nothing changes.
-echo "Check complete!"
-
 if [ -n "$HEALTHCHECK_ID" ]; then
 	curl -sS -X POST -o /dev/null --fail "$HEALTHCHECK_HOST/$HEALTHCHECK_ID"
 fi

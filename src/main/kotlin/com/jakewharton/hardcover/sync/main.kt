@@ -21,6 +21,7 @@ import kotlin.io.path.deleteRecursively
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.system.exitProcess
+import kotlin.time.measureTime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -146,42 +147,44 @@ private class MainCommand(
 			.build()
 
 		try {
-			val response = client.newCall(request).execute()
-			check(response.isSuccessful) { "HTTP ${response.code} ${response.message}" }
+			val took = measureTime {
+				val response = client.newCall(request).execute()
+				check(response.isSuccessful) { "HTTP ${response.code} ${response.message}" }
 
-			val responseSource = response.body!!.source()
-			val responseJson = json.decodeFromBufferedSource(JsonObject.serializer(), responseSource)
+				val responseSource = response.body!!.source()
+				val responseJson = json.decodeFromBufferedSource(JsonObject.serializer(), responseSource)
 
-			// GraphQL over HTTP puts _all_ errors into the response because… reasons.
-			responseJson["errors"]?.let { errors ->
-				System.err.println(errors.toString())
-				exitProcess(1)
-			}
+				// GraphQL over HTTP puts _all_ errors into the response because… reasons.
+				responseJson["errors"]?.let { errors ->
+					System.err.println(errors.toString())
+					exitProcess(1)
+				}
 
-			// Unwrap GraphQL 'data' envelope and Hardcover 'me' single-element array.
-			val responseMe = responseJson
-				.getValue("data")
-				.jsonObject
-				.getValue("me")
-				.jsonArray
-				.single()
+				// Unwrap GraphQL 'data' envelope and Hardcover 'me' single-element array.
+				val responseMe = responseJson
+					.getValue("data")
+					.jsonObject
+					.getValue("me")
+					.jsonArray
+					.single()
 
-			if (data.exists()) {
-				// Delete contents of folder, if any.
-				data.listDirectoryEntries().forEach(Path::deleteRecursively)
-			} else {
-				data.createDirectories()
-			}
+				if (data.exists()) {
+					// Delete contents of folder, if any.
+					data.listDirectoryEntries().forEach(Path::deleteRecursively)
+				} else {
+					data.createDirectories()
+				}
 
-			data.resolve("data.json").sink().buffer().use { fileSink ->
-				json.encodeToBufferedSink(JsonElement.serializer(), responseMe, fileSink)
+				data.resolve("data.json").sink().buffer().use { fileSink ->
+					json.encodeToBufferedSink(JsonElement.serializer(), responseMe, fileSink)
 
-				// Add trailing newline which kotlinx.serialization JSON will not produce.
-				fileSink.writeByte('\n'.code)
+					// Add trailing newline which kotlinx.serialization JSON will not produce.
+					fileSink.writeByte('\n'.code)
+				}
 			}
 
 			val now = ISO_LOCAL_DATE_TIME.format(LocalDateTime.now(clock))
-			println("Done! $now")
+			println("Done at $now took $took")
 		} finally {
 			client.apply {
 				dispatcher.executorService.shutdown()
