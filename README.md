@@ -56,10 +56,8 @@ Arguments:
 The container runs the tool using cron on a specified schedule.
 
 [![Docker Image Version](https://img.shields.io/docker/v/jakewharton/hardcover-data-sync?sort=semver)][hub]
-[![Docker Image Size](https://img.shields.io/docker/image-size/jakewharton/hardcover-data-sync)][layers]
 
  [hub]: https://hub.docker.com/r/jakewharton/hardcover-data-sync/
- [layers]: https://microbadger.com/images/jakewharton/hardcover-data-sync
 
 ```
 docker run -it --rm
