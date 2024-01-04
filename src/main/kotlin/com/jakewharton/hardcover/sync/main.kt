@@ -12,12 +12,14 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
 import java.nio.file.FileSystem
 import java.nio.file.FileSystems
+import java.nio.file.Path
 import java.time.Clock
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteRecursively
 import kotlin.io.path.exists
+import kotlin.io.path.listDirectoryEntries
 import kotlin.system.exitProcess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -165,9 +167,11 @@ private class MainCommand(
 				.single()
 
 			if (data.exists()) {
-				data.deleteRecursively()
+				// Delete contents of folder, if any.
+				data.listDirectoryEntries().forEach(Path::deleteRecursively)
+			} else {
+				data.createDirectories()
 			}
-			data.createDirectories()
 
 			data.resolve("data.json").sink().buffer().use { fileSink ->
 				json.encodeToBufferedSink(JsonElement.serializer(), responseMe, fileSink)
