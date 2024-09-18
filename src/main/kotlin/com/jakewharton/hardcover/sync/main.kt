@@ -3,6 +3,7 @@
 package com.jakewharton.hardcover.sync
 
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.help
 import com.github.ajalt.clikt.parameters.options.flag
@@ -108,10 +109,10 @@ private val json = Json {
 private class MainCommand(
 	fileSystem: FileSystem,
 	private val clock: Clock,
-) : CliktCommand(
-	name = "hardcover-data-sync",
-	help = "Download all user data from Hardcover into a folder for backup",
-) {
+) : CliktCommand("hardcover-data-sync") {
+	override fun help(context: Context) =
+		"Download all user data from Hardcover into a folder for backup"
+
 	private val debug by option(hidden = true)
 		.flag()
 
