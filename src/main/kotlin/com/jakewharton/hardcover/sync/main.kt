@@ -111,8 +111,7 @@ private class MainCommand(
 	fileSystem: FileSystem,
 	private val clock: Clock,
 ) : CliktCommand("hardcover-data-sync") {
-	override fun help(context: Context) =
-		"Download all user data from Hardcover into a folder for backup"
+	override fun help(context: Context) = "Download all user data from Hardcover into a folder for backup"
 
 	private val debug by option(hidden = true)
 		.flag()
