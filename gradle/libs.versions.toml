@@ -2,7 +2,7 @@
 okhttp = "5.2.1"
 
 [libraries]
-kotlin-gradlePlugin = "org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20"
+kotlin-gradlePlugin = "org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.21"
 
 spotless-gradlePlugin = "com.diffplug.spotless:spotless-plugin-gradle:8.0.0"
 ktlint = "com.pinterest.ktlint:ktlint-cli:1.7.1"
