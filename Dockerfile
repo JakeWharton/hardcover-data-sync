@@ -39,8 +39,6 @@ ENV \
     CRON="" \
     HEALTHCHECK_ID="" \
     HEALTHCHECK_HOST="https://hc-ping.com" \
-    PUID="" \
-    PGID="" \
     HARDCOVER_DATA_SYNC_ARGS=""
 COPY root/ /
 WORKDIR /app
