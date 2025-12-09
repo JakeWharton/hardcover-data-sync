@@ -1,4 +1,4 @@
-name: build and publish
+name: publish
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
       - '*'
 
 env:
-  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -Dkotlin.incremental=false"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.vfs.watch=false -Dkotlin.incremental=false -Dorg.gradle.logging.stacktrace=full"
 
 jobs:
   build:
@@ -16,11 +16,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-      - uses: gradle/actions/wrapper-validation@v5
       - uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
-          java-version: 21
+          java-version-file: .github/workflows/.java-version
+      - uses: gradle/actions/setup-gradle@v5
+
+      - run: ./gradlew build
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: hardcover-data-sync.zip
+          path: build/distributions/hardcover-data-sync.zip
+          if-no-files-found: error
 
       - uses: crazy-max/ghaction-docker-meta@v5
         id: docker_meta
@@ -41,23 +49,11 @@ jobs:
 
       - run: echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
 
-      - run: ./gradlew build
-
       - uses: docker/build-push-action@v6
         with:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-
-      - name: Get version
-        id: get_version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
-
-      - name: Set SHA
-        id: shasum
-        if: startsWith(github.ref, 'refs/tags/')
-        run: echo ::set-output name=sha::"$(shasum -a 256 build/distributions/hardcover-data-sync.zip | awk '{printf $1}')"
 
       - name: Extract release notes
         id: release_notes
@@ -72,20 +68,3 @@ jobs:
           files: build/distributions/hardcover-data-sync.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Bump Brew
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: |
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-
-          # Update to ensure we have the latest version which supports arbitrary default branches.
-          brew update
-
-          brew tap JakeWharton/repo
-          brew bump-formula-pr -f --version=${{ steps.get_version.outputs.version }} --no-browse --no-audit \
-            --sha256=${{ steps.shasum.outputs.sha }} \
-            --url="https://github.com/JakeWharton/hardcover-data-sync/releases/download/${{ steps.get_version.outputs.version }}/hardcover-data-sync.zip" \
-            JakeWharton/repo/hardcover-data-sync

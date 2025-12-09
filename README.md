@@ -53,41 +53,63 @@ Arguments:
 
 ## Docker
 
-The container runs the tool using cron on a specified schedule.
+A container which runs the binary is available from Docker Hub and GitHub Container Registry.
 
-[![Docker Image Version](https://img.shields.io/docker/v/jakewharton/hardcover-data-sync?sort=semver)][hub]
+* `jakewharton/hardcover-data-sync`
+* `ghcr.io/jakewharton/hardcover-data-sync`
+
+[![Docker Image Version](https://img.shields.io/docker/v/jakewharton/hardcover-data-sync?sort=semver&style=flat-square)][hub]
+[![Docker Image Size](https://img.shields.io/docker/image-size/jakewharton/hardcover-data-sync?sort=semver&style=flat-square)][hub]<br>
+[![Docker Image Version](https://img.shields.io/docker/v/jakewharton/hardcover-data-sync/trunk?style=flat-square)][hub]
+[![Docker Image Size](https://img.shields.io/docker/image-size/jakewharton/hardcover-data-sync/trunk?style=flat-square)][hub]
 
  [hub]: https://hub.docker.com/r/jakewharton/hardcover-data-sync/
 
 ```
-docker run -it --rm
+docker run --rm
     -v /path/to/data:/data \
-    -e "CRON=0 * * * *" \
-    -e "HARDCOVER_BEARER=..." \
-    jakewharton/hardcover-data-sync:0.1
+    jakewharton/hardcover-data-sync \
+      --bearer ... \
+      /data
 ```
 
-To be notified when sync is failing visit https://healthchecks.io, create a check, and specify
-the ID to the container using the `HEALTHCHECK_ID` environment variable.
+See [command-line usage](#Usage) for how to run the binary.
 
-### Docker Compose
+If you specify the `--cron` option with a valid cron specifier, the tool will not exit and perform automatic checks in accordance with the schedule.
+For help creating a valid cron specifier, visit [cron.help](https://cron.help/#0_*_*_*_*).
+
+To be notified when sync is failing visit https://healthchecks.io, create a check, and specify the ID to the container using the `--hc-id` option.
+You can also specify a custom host with `--hc-host`.
+
+If you're using Docker Compose, all the options are available as environment variables.
 
 ```yaml
 services:
   hardcover-data-sync:
-    image: jakewharton/hardcover-data-sync:0.1
+    image: jakewharton/hardcover-data-sync
     restart: unless-stopped
     volumes:
       - /path/to/data:/data
     environment:
-      - "CRON=0 * * * *"
-      - "HARDCOVER_BEARER=..."
+      - "HARDCOVER_SYNC_CRON=0 * * * *"
+      - "HARDCOVER_SYNC_BEARER=..."
       #Optional:
-      - "HEALTHCHECK_ID=..."
-      - "PUID=..."
-      - "PGID=..."
+      - "HARDCOVER_SYNC_HC_ID=..."
+      - "HARDCOVER_SYNC_HC_HOST=..."
 ```
 
+Note: You may want to specify an explicit version rather than `latest`.
+See https://hub.docker.com/r/jakewharton/hardcover-data-sync/tags or `CHANGELOG.md` for the available versions.
+Use `trunk` for the latest changes.
+
+## Development
+
+To run the latest code build with `./gradlew installDist`.  This will put the application into
+`build/install/hardcover-data-sync/`. From there you can use the
+[command-line instructions](#Usage) to run.
+
+The Docker containers can be built with `docker build .`, which also runs the full set of checks
+as CI would.
 
 # License
 
