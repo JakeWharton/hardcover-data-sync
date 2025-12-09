@@ -1,15 +1,15 @@
 # Hardcover Data Sync
 
-Script to sync all user data from [Hardcover](https://hardcover.app)
-to a local directory.
+Script to dump all user data from [Hardcover](https://hardcover.app).
 
 ```
-hardcover-data-sync --bearer=<token> backup/
+hardcover-data-sync --bearer=<token>
 ```
 
-On each run, the tool will clear the destination directory and write out files.
-The data will not be versioned in any way. If you want historical versions
-use a log rotation tool, ZFS snapshots, or something else of that nature.
+By default, the tool will dump everything to stdout.
+You can redirect to a file or another tool, or by specifying `--output` you can write to a file.
+The data will not be versioned in any way.
+If you want historical versions use a log rotation tool, ZFS snapshots, or something else of that nature.
 
 Any data missing that you want included?
 [File an issue!](https://github.com/JakeWharton/hardcover-data-sync/issues/new)
@@ -38,16 +38,17 @@ run `bin/hardcover-data-sync` or `bin/hardcover-data-sync.bat`.
 
 ```
 $ hardcover-data-sync -h
-Usage: hardcover-data-sync [<options>] <dir>
+Usage: hardcover-data-sync [<options>]
 
-  Download all user data from Hardcover into a folder for backup
+  Output all user data from Hardcover for backup
 
 Options:
-  --bearer=<token>  Bearer token for HTTP 'Authorization' header
-  -h, --help        Show this message and exit
-
-Arguments:
-  <dir>  Directory into which the data will be written
+  --bearer=<token>     Bearer token for HTTP 'Authorization' header
+  --output=<file>      Backup destination file, or '-' to write to stdout (default)
+  --cron=<expression>  Run command forever and perform sync on this schedule
+  --hc-id=<id>         ID of Healthchecks.io service to notify
+  --hc-host=<url>      Host of Healthchecks.io service to notify. Requires --hc-id
+  -h, --help           Show this message and exit
 ```
 
 
@@ -66,11 +67,8 @@ A container which runs the binary is available from Docker Hub and GitHub Contai
  [hub]: https://hub.docker.com/r/jakewharton/hardcover-data-sync/
 
 ```
-docker run --rm
-    -v /path/to/data:/data \
-    jakewharton/hardcover-data-sync \
-      --bearer ... \
-      /data
+docker run --rm jakewharton/hardcover-data-sync \
+    --bearer ...
 ```
 
 See [command-line usage](#Usage) for how to run the binary.
@@ -93,6 +91,7 @@ services:
     environment:
       - "HARDCOVER_SYNC_CRON=0 * * * *"
       - "HARDCOVER_SYNC_BEARER=..."
+      - "HARDCOVER_SYNC_OUTPUT=/data/dump.json"
       #Optional:
       - "HARDCOVER_SYNC_HC_ID=..."
       - "HARDCOVER_SYNC_HC_HOST=..."
