@@ -5,25 +5,19 @@ package com.jakewharton.hardcover.sync
 import com.github.ajalt.clikt.command.SuspendingCliktCommand
 import com.github.ajalt.clikt.command.main
 import com.github.ajalt.clikt.core.Context
-import com.github.ajalt.clikt.parameters.arguments.argument
-import com.github.ajalt.clikt.parameters.arguments.help
 import com.github.ajalt.clikt.parameters.options.convert
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.help
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
-import com.github.ajalt.clikt.parameters.types.path
 import io.github.kevincianfarini.cardiologist.PulseBackpressureStrategy.Companion.SkipNext
 import io.github.kevincianfarini.cardiologist.PulseSchedule
 import io.github.kevincianfarini.cardiologist.schedulePulse
 import java.nio.file.FileSystem
 import java.nio.file.FileSystems
-import java.nio.file.Path
-import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteRecursively
-import kotlin.io.path.exists
-import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.bufferedWriter
+import kotlin.io.path.createParentDirectories
 import kotlin.system.exitProcess
 import kotlin.time.Clock
 import kotlin.time.measureTime
@@ -36,7 +30,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.okio.decodeFromBufferedSource
-import kotlinx.serialization.json.okio.encodeToBufferedSink
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -45,8 +38,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import okhttp3.logging.HttpLoggingInterceptor.Level.BASIC
-import okio.buffer
-import okio.sink
 
 suspend fun main(vararg args: String) {
 	MainCommand(
@@ -120,11 +111,11 @@ private val json = Json {
 }
 
 private class MainCommand(
-	fileSystem: FileSystem,
+	private val fileSystem: FileSystem,
 	private val clock: Clock,
 	private val timeZone: TimeZone,
 ) : SuspendingCliktCommand("hardcover-data-sync") {
-	override fun help(context: Context) = "Download all user data from Hardcover into a folder for backup"
+	override fun help(context: Context) = "Output all user data from Hardcover for backup"
 
 	private val debug by option(hidden = true)
 		.flag()
@@ -133,9 +124,9 @@ private class MainCommand(
 		.help("Bearer token for HTTP 'Authorization' header")
 		.required()
 
-	private val data by argument(name = "dir")
-		.help("Directory into which the data will be written")
-		.path(canBeFile = false, fileSystem = fileSystem)
+	private val output by option("--output", metavar = "file", envvar = "HARDCOVER_SYNC_OUTPUT")
+		.default("-")
+		.help("Backup destination file, or '-' to write to stdout (default)")
 
 	private val schedule by option("--cron", metavar = "expression", envvar = "HARDCOVER_SYNC_CRON")
 		.help("Run command forever and perform sync on this schedule")
@@ -212,18 +203,19 @@ private class MainCommand(
 				.jsonArray
 				.single()
 
-			if (data.exists()) {
-				// Delete contents of folder, if any.
-				data.listDirectoryEntries().forEach(Path::deleteRecursively)
+			val report = json.encodeToString(JsonElement.serializer(), responseMe)
+
+			if (output == "-") {
+				print(report)
 			} else {
-				data.createDirectories()
-			}
-
-			data.resolve("data.json").sink().buffer().use { fileSink ->
-				json.encodeToBufferedSink(JsonElement.serializer(), responseMe, fileSink)
-
-				// Add trailing newline which kotlinx.serialization JSON will not produce.
-				fileSink.writeByte('\n'.code)
+				fileSystem.getPath(output).apply {
+					createParentDirectories()
+					bufferedWriter().use { f ->
+						f.write(report)
+						// Add trailing newline which kotlinx.serialization JSON will not produce.
+						f.write('\n'.code)
+					}
+				}
 			}
 
 			started?.complete()
