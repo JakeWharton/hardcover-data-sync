@@ -2,28 +2,33 @@
 
 package com.jakewharton.hardcover.sync
 
-import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.command.SuspendingCliktCommand
+import com.github.ajalt.clikt.command.main
 import com.github.ajalt.clikt.core.Context
-import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.help
+import com.github.ajalt.clikt.parameters.options.convert
+import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.help
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
+import io.github.kevincianfarini.cardiologist.PulseBackpressureStrategy.Companion.SkipNext
+import io.github.kevincianfarini.cardiologist.PulseSchedule
+import io.github.kevincianfarini.cardiologist.schedulePulse
 import java.nio.file.FileSystem
 import java.nio.file.FileSystems
 import java.nio.file.Path
-import java.time.Clock
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteRecursively
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.system.exitProcess
+import kotlin.time.Clock
 import kotlin.time.measureTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -33,6 +38,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.okio.decodeFromBufferedSource
 import kotlinx.serialization.json.okio.encodeToBufferedSink
 import kotlinx.serialization.json.put
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,10 +48,11 @@ import okhttp3.logging.HttpLoggingInterceptor.Level.BASIC
 import okio.buffer
 import okio.sink
 
-fun main(vararg args: String) {
+suspend fun main(vararg args: String) {
 	MainCommand(
 		fileSystem = FileSystems.getDefault(),
-		clock = Clock.systemDefaultZone(),
+		clock = Clock.System,
+		timeZone = TimeZone.currentSystemDefault(),
 	).main(args)
 }
 
@@ -102,6 +109,11 @@ private val query = """
 	|
 """.trimMargin()
 
+private val requestBody = buildJsonObject {
+	put("query", query)
+	put("operationName", OPERATION_NAME)
+}
+
 private val json = Json {
 	prettyPrint = true
 	prettyPrintIndent = "\t"
@@ -110,13 +122,14 @@ private val json = Json {
 private class MainCommand(
 	fileSystem: FileSystem,
 	private val clock: Clock,
-) : CliktCommand("hardcover-data-sync") {
+	private val timeZone: TimeZone,
+) : SuspendingCliktCommand("hardcover-data-sync") {
 	override fun help(context: Context) = "Download all user data from Hardcover into a folder for backup"
 
 	private val debug by option(hidden = true)
 		.flag()
 
-	private val bearer by option("--bearer", metavar = "token")
+	private val bearer by option("--bearer", metavar = "token", envvar = "HARDCOVER_SYNC_TOKEN")
 		.help("Bearer token for HTTP 'Authorization' header")
 		.required()
 
@@ -124,18 +137,19 @@ private class MainCommand(
 		.help("Directory into which the data will be written")
 		.path(canBeFile = false, fileSystem = fileSystem)
 
-	override fun run() {
-		val body = buildJsonObject {
-			put("query", query)
-			put("operationName", OPERATION_NAME)
-		}
+	private val schedule by option("--cron", metavar = "expression", envvar = "HARDCOVER_SYNC_CRON")
+		.help("Run command forever and perform sync on this schedule")
+		.convert { PulseSchedule.parseCron(it) }
 
-		val request = Request.Builder()
-			.url("https://hardcover-production.hasura.app/v1/graphql")
-			.header("Authorization", "Bearer $bearer")
-			.post(body.toString().toRequestBody("application/json".toMediaType()))
-			.build()
+	private val healthCheckId by option("--hc-id", metavar = "id", envvar = "HARDCOVER_SYNC_HC_ID")
+		.help("ID of Healthchecks.io service to notify")
 
+	private val healthCheckHost by option("--hc-host", metavar = "url", envvar = "HARDCOVER_SYNC_HC_HOST")
+		.convert { it.toHttpUrl() }
+		.default("https://hc-ping.com".toHttpUrl())
+		.help("Host of Healthchecks.io service to notify. Requires --hc-id")
+
+	override suspend fun run() {
 		val client = OkHttpClient.Builder()
 			.apply {
 				if (debug) {
@@ -147,50 +161,75 @@ private class MainCommand(
 			}
 			.build()
 
+		val healthCheckService = HealthCheckService(healthCheckHost, client)
+		val healthCheck = healthCheckId?.let(healthCheckService::newCheck)
+
 		try {
-			val took = measureTime {
-				val response = client.newCall(request).execute()
-				check(response.isSuccessful) { "HTTP ${response.code} ${response.message}" }
-
-				val responseSource = response.body!!.source()
-				val responseJson = json.decodeFromBufferedSource(JsonObject.serializer(), responseSource)
-
-				// GraphQL over HTTP puts _all_ errors into the response because… reasons.
-				responseJson["errors"]?.let { errors ->
-					System.err.println(errors.toString())
-					exitProcess(1)
+			val schedule = schedule
+			if (schedule != null) {
+				println("Sync schedule: $schedule")
+				val pulse = clock.schedulePulse(schedule, timeZone)
+				pulse.beat(strategy = SkipNext) {
+					sync(client, healthCheck)
 				}
-
-				// Unwrap GraphQL 'data' envelope and Hardcover 'me' single-element array.
-				val responseMe = responseJson
-					.getValue("data")
-					.jsonObject
-					.getValue("me")
-					.jsonArray
-					.single()
-
-				if (data.exists()) {
-					// Delete contents of folder, if any.
-					data.listDirectoryEntries().forEach(Path::deleteRecursively)
-				} else {
-					data.createDirectories()
-				}
-
-				data.resolve("data.json").sink().buffer().use { fileSink ->
-					json.encodeToBufferedSink(JsonElement.serializer(), responseMe, fileSink)
-
-					// Add trailing newline which kotlinx.serialization JSON will not produce.
-					fileSink.writeByte('\n'.code)
-				}
+				error("unreachable") // https://github.com/kevincianfarini/cardiologist/issues/117
+			} else {
+				sync(client, healthCheck)
 			}
-
-			val now = ISO_LOCAL_DATE_TIME.format(LocalDateTime.now(clock))
-			println("Done at $now took $took")
 		} finally {
-			client.apply {
-				dispatcher.executorService.shutdown()
-				connectionPool.evictAll()
-			}
+			client.dispatcher.executorService.shutdown()
+			client.connectionPool.evictAll()
 		}
+	}
+
+	private fun sync(client: OkHttpClient, healthCheck: HealthCheck?) {
+		val started = healthCheck?.start()
+
+		val request = Request.Builder()
+			.url("https://hardcover-production.hasura.app/v1/graphql")
+			.header("Authorization", "Bearer $bearer")
+			.post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+			.build()
+
+		val took = measureTime {
+			val response = client.newCall(request).execute()
+			check(response.isSuccessful) { "HTTP ${response.code} ${response.message}" }
+
+			val responseSource = response.body.source()
+			val responseJson = json.decodeFromBufferedSource(JsonObject.serializer(), responseSource)
+
+			// GraphQL over HTTP puts _all_ errors into the response because… reasons.
+			responseJson["errors"]?.let { errors ->
+				System.err.println(errors.toString())
+				exitProcess(1)
+			}
+
+			// Unwrap GraphQL 'data' envelope and Hardcover 'me' single-element array.
+			val responseMe = responseJson
+				.getValue("data")
+				.jsonObject
+				.getValue("me")
+				.jsonArray
+				.single()
+
+			if (data.exists()) {
+				// Delete contents of folder, if any.
+				data.listDirectoryEntries().forEach(Path::deleteRecursively)
+			} else {
+				data.createDirectories()
+			}
+
+			data.resolve("data.json").sink().buffer().use { fileSink ->
+				json.encodeToBufferedSink(JsonElement.serializer(), responseMe, fileSink)
+
+				// Add trailing newline which kotlinx.serialization JSON will not produce.
+				fileSink.writeByte('\n'.code)
+			}
+
+			started?.complete()
+		}
+
+		val now = clock.now().toLocalDateTime(timeZone).toString()
+		println("Done at $now took $took")
 	}
 }
