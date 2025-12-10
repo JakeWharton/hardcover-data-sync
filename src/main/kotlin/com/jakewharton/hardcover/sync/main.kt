@@ -79,6 +79,9 @@ private val query = """
 	|        book {
 	|          ...booksFragment
 	|        }
+	|        edition {
+	|          ...editionsFragment
+	|        }
 	|      }
 	|    }
 	|  }
@@ -87,8 +90,11 @@ private val query = """
 	|fragment booksFragment on books {
 	|  id
 	|  title
-	|  default_edition {
-	|    ...editionsFragment
+	|  contributions {
+	|    author {
+	|      id
+	|      name
+	|    }
 	|  }
 	|}
 	|
@@ -161,7 +167,11 @@ private class MainCommand(
 				println("Sync schedule: $schedule")
 				val pulse = clock.schedulePulse(schedule, timeZone)
 				pulse.beat(strategy = SkipNext) {
-					sync(client, healthCheck)
+					val took = measureTime {
+						sync(client, healthCheck)
+					}
+					val now = clock.now().toLocalDateTime(timeZone).toString()
+					println("Done at $now took $took")
 				}
 				error("unreachable") // https://github.com/kevincianfarini/cardiologist/issues/117
 			} else {
@@ -177,51 +187,45 @@ private class MainCommand(
 		val started = healthCheck?.start()
 
 		val request = Request.Builder()
-			.url("https://hardcover-production.hasura.app/v1/graphql")
+			.url("https://api.hardcover.app/v1/graphql")
 			.header("Authorization", "Bearer $bearer")
 			.post(requestBody.toString().toRequestBody("application/json".toMediaType()))
 			.build()
 
-		val took = measureTime {
-			val response = client.newCall(request).execute()
-			check(response.isSuccessful) { "HTTP ${response.code} ${response.message}" }
+		val response = client.newCall(request).execute()
+		check(response.isSuccessful) { "HTTP ${response.code} ${response.message}" }
 
-			val responseSource = response.body.source()
-			val responseJson = json.decodeFromBufferedSource(JsonObject.serializer(), responseSource)
+		val responseSource = response.body.source()
+		val responseJson = json.decodeFromBufferedSource(JsonObject.serializer(), responseSource)
 
-			// GraphQL over HTTP puts _all_ errors into the response because… reasons.
-			responseJson["errors"]?.let { errors ->
-				System.err.println(errors.toString())
-				exitProcess(1)
-			}
-
-			// Unwrap GraphQL 'data' envelope and Hardcover 'me' single-element array.
-			val responseMe = responseJson
-				.getValue("data")
-				.jsonObject
-				.getValue("me")
-				.jsonArray
-				.single()
-
-			val report = json.encodeToString(JsonElement.serializer(), responseMe)
-
-			if (output == "-") {
-				print(report)
-			} else {
-				fileSystem.getPath(output).apply {
-					createParentDirectories()
-					bufferedWriter().use { f ->
-						f.write(report)
-						// Add trailing newline which kotlinx.serialization JSON will not produce.
-						f.write('\n'.code)
-					}
-				}
-			}
-
-			started?.complete()
+		// GraphQL over HTTP puts _all_ errors into the response because… reasons.
+		responseJson["errors"]?.let { errors ->
+			System.err.println(errors.toString())
+			exitProcess(1)
 		}
 
-		val now = clock.now().toLocalDateTime(timeZone).toString()
-		println("Done at $now took $took")
+		// Unwrap GraphQL 'data' envelope and Hardcover 'me' single-element array.
+		val responseMe = responseJson
+			.getValue("data")
+			.jsonObject
+			.getValue("me")
+			.jsonArray
+			.single()
+
+		// Add trailing newline which kotlinx.serialization JSON will not produce.
+		val report = json.encodeToString(JsonElement.serializer(), responseMe) + "\n"
+
+		if (output == "-") {
+			print(report)
+		} else {
+			fileSystem.getPath(output).apply {
+				createParentDirectories()
+				bufferedWriter().use { f ->
+					f.write(report)
+				}
+			}
+		}
+
+		started?.complete()
 	}
 }
