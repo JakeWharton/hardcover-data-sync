@@ -4,7 +4,7 @@ okhttp = "5.3.2"
 [libraries]
 kotlin-gradlePlugin = "org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21"
 
-spotless-gradlePlugin = "com.diffplug.spotless:spotless-plugin-gradle:8.4.0"
+spotless-gradlePlugin = "com.diffplug.spotless:spotless-plugin-gradle:8.5.0"
 ktlint = "com.pinterest.ktlint:ktlint-cli:1.8.0"
 
 kotlinx-serialization-json-okio = "org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0"
