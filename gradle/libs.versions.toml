@@ -1,5 +1,5 @@
 [versions]
-okhttp = "5.4.0"
+okhttp = "5.5.0"
 
 [libraries]
 kotlin-gradlePlugin = "org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10"
